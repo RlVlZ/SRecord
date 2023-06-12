@@ -1,6 +1,8 @@
 # SRecord
 Python scripts to deal with Motorola SRecords
 
+![Imgur](https://imgur.com/VnhPnq9.gif)
+
 # Usage
 ```py SRec_main.py -f <srecord_file_name>```
 
