@@ -1,6 +1,14 @@
 # SRecord
 Python scripts to deal with Motorola SRecords
 
+---
+
+### /!\ Disclaimer
+This is a quick and ugly implementation made by someone who is new to python. It is a project to try things such as OOP, the argparse module etc. If you are looking for something made in python and cleaner, I think the bincopy project might be the way to go.
+This being said, if you have any piece of advice, idea of better implementation or new functionnalities that could be implemented, feel free to contact me and contribute :)
+
+---
+
 ![Imgur](https://imgur.com/VnhPnq9.gif)
 
 # Usage
