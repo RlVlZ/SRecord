@@ -21,7 +21,7 @@ class SRecordFile:
         This function takes a motorola SRecord file and outputs a SRecordFile instance as follow :
             a list of header SRecord
             a list of footer SRecord
-            a dictionnary of data SRecord, each SRecord having its own adress for key
+            a dictionnary of data SRecord, each SRecord having its own address for key
         '''
         self.sectors = []
         self.start = ''
@@ -43,15 +43,15 @@ class SRecordFile:
             else:
                 self.data[crt_srec.address_u] = crt_srec
                 if self.start == '':
-                    self.start = crt_srec.address_h
+                    self.start = crt_srec.address_u
                 elif crt_srec.address_u != previous_Srec.end_address() + 1 :
                     self.sectors.append(Sector(start=self.start, end= previous_Srec.end_address()))
-                    self.start = crt_srec.address_h
+                    self.start = crt_srec.address_u
                 previous_Srec = crt_srec
         self.sectors.append(Sector(start=self.start, end=previous_Srec.end_address()))
 
         self.data = collections.OrderedDict(sorted(self.data.items()))
-        self.max_addr_len = max(SRec.addr_len() for SRec in self.data.values())
+        self.max_addr_len = max(SRec.addr_len('char') for SRec in self.data.values())
         self.max_data_len = max([len(SRec.data_h) for SRec in self.data.values()])
         self.addr_list = list(self.data.keys())
         self.lower_addr = self.addr_list[0]
@@ -67,12 +67,12 @@ class SRecordFile:
         file_infos += f"File contains {len(self.header)+len(self.footer)+len(self.data)} SRecords,\n"
         file_infos += f"including {len(self.data)} data SRecords.\n"
         file_infos += 20*'-' + '\n'
-        file_infos += f"   Lower adress   :\t0x" + self.addrFormat.format(self.lower_addr) + '\n'
-        file_infos += f"   Higher address :\t0x" + self.addrFormat.format(self.higher_addr) + '\n'
+        file_infos += f"   Lower address   :\t0x{self.addrFormat.format(self.lower_addr)}\n"
+        file_infos += f"   Higher address :\t0x{self.addrFormat.format(self.higher_addr)}\n"
         file_infos += 20*'-' + '\n'
         for i, sector in enumerate(self.sectors):
-            file_infos += f"Sector {i} starts at adress 0x{sector.start}, ends at adress 0x"
-            file_infos += self.addrFormat.format(sector.end) + '\n'
+            file_infos += f"Sector {i} starts at address 0x{self.addrFormat.format(sector.start)}, ends at address 0x"
+            file_infos += f"{self.addrFormat.format(sector.end)}\n"
         file_infos += 20*'-' + '\n'
         return file_infos
 
@@ -100,7 +100,7 @@ class SRecordFile:
 
     def get_data_coord(self, position):
         '''
-        Input : position is an adress inside the file, integer format
+        Input : position is an address inside the file, integer format
         Output : a Coord named tuple, with line and idx
         '''
         if position < self.lower_addr:
