@@ -53,6 +53,14 @@ class SubFuncSet():
         self.func2shortCut_dict[func_def.fnc.__name__] = func_def.sct
         globals()[func_def.sct] = func_def.fnc
 
+    def displayHelp(self):
+        print("You may chose between the following actions :")
+        for subF in self.parser_dict:
+            print(f"\t* {subF} | {self.func2shortCut_dict[subF]}")
+        print()
+        print("For more information about an action : ACTION -h")
+        print()
+
 #==============================================
 # Defining functions and their argument parsers
 #==============================================
@@ -246,15 +254,11 @@ def main():
             SRec_f.export(SRec_f.path)
             if cmp(SRec_f.path, SRec_f.path + '_bak'):
                 os.remove(SRec_f.path + '_bak')
-
+        elif command in ["-h", "--help", "help", "h"]:
+            sub_func_set.displayHelp()
         else:
             print(f"{command} : unknown command.")
-            print("Please choose between the following actions :")
-            for subF in sub_func_set.parser_dict:
-                print(f"\t* {subF} | {sub_func_set.func2shortCut_dict[subF]}")
-            print()
-            print("For more information about an action : ACTION -h")
-            print()
+            sub_func_set.displayHelp
     
 if __name__ == '__main__':
     main()
