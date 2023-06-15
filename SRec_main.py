@@ -258,7 +258,7 @@ def main():
             sub_func_set.displayHelp()
         else:
             print(f"{command} : unknown command.")
-            sub_func_set.displayHelp
+            sub_func_set.displayHelp()
     
 if __name__ == '__main__':
     main()
