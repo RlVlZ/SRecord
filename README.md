@@ -9,7 +9,7 @@ This being said, if you have any piece of advice, idea of better implementation 
 
 ---
 
-![Imgur](https://imgur.com/VnhPnq9.gif)
+![Imgur](https://imgur.com/q0G8H4I.gif)
 
 # Usage
 ```py SRec_main.py -f <srecord_file_name>```
