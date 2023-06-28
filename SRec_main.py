@@ -8,7 +8,7 @@ from collections import namedtuple
 from shutil import copyfile
 from filecmp import cmp
 
-ASCII = list(range(0x30, 0x39)) + list(range(0x41, 0x5a)) + list(range(0x61, 0x7a))
+
 
 #===========================================================================
 # NamedTuple FuncDef : contains a function, its shortcuts and its arg parser
@@ -66,7 +66,7 @@ class SubFuncSet():
 #==============================================
 
 show_line_prs = argparse.ArgumentParser(prog="show_line", description="display the SRecord where is the given adress")
-show_line_prs.add_argument('-a', '--address', help='Hex adress of the data you want to display.No 0x needed')
+show_line_prs.add_argument('-a', '--address', help='Hex adress of the data you want to display.No 0x needed', required=True)
 show_line_prs.add_argument('-nl', '--nb_lines', help='Number of line to display after the first one', nargs='?', default = 1, type=int)
 def show_line(file, address, nb_lines):
     '''
@@ -74,7 +74,7 @@ def show_line(file, address, nb_lines):
         Input   * file : SRecordFile object
                 * address : string of hexadecimal address
     '''
-    addr_u = sr.INT(address)
+    addr_u = srf.convert_address(address)
     try :
         line_addr = file.get_data_coord(addr_u).line
     except srf.SRecordFileError as e:
@@ -88,10 +88,32 @@ def show_line(file, address, nb_lines):
             except KeyError:
                 print("/!\ - Reaching end of sector.")
 
+bin_disp_pars = argparse.ArgumentParser(prog="bin_disp", description="binary display of datas")
+bin_disp_pars.add_argument('-a', '--address', help='Address of the data you want to display', required=True)
+bin_disp_pars.add_argument('-nw', '--nb_words', help="number of words to display per line", nargs='?', default = 4, type=int)
+bin_disp_pars.add_argument('-nl', '--nb_lines', help="number of lines to display", nargs='?', default=1, type=int)
+bin_disp_pars.add_argument('-e', '--endianess', help="Endianess of words display", nargs='?', default='big', type=str)
+def bin_disp(file, address, nb_words, nb_lines, endianess):
+    '''
+    Display a binary view of the data at address given, nb_words words for nb_lines lines
+        Input   * file : SRecordFile object
+                * address : address, not matter the format
+                * nb_words : number of words to display per line
+                * nb lines : number of lines to display
+    '''
+    addr_u = srf.convert_address(address)
+    print(file.binary_display_header(nb_words, endianess))
+    for i in range(nb_lines):
+        try:
+            print(file.binary_display(addr_u + i*nb_words*4, nb_words, endianess))
+        except srf.AccessSrecFileError as e:
+            print(e)
+            break
+
 
 patch_prs = argparse.ArgumentParser(prog="patch", description="change the data at a given adress with the value given")
-patch_prs.add_argument('-a', '--address', help='Hex adress of the data you want to patch. No 0x needed')
-patch_prs.add_argument('-v', '--value', help='Hex value you want to write')
+patch_prs.add_argument('-a', '--address', help='Hex adress of the data you want to patch. No 0x needed', required=True)
+patch_prs.add_argument('-v', '--value', help='Hex value you want to write', required=True)
 def patch(file, address, value):
     '''
     Patching the ADDRESS given with VALUE
@@ -99,7 +121,11 @@ def patch(file, address, value):
                 * address : string of hexadecimal address
                 * value : string of hexadecimal value to patch
     '''
-    file.patch_SRecord_File(address, value)
+    addr_u = srf.convert_address(address)
+    try:
+        file.patch_SRecord_File(addr_u, value)
+    except srf.SRecordFileError as e:
+        print(e)
 
 
 fix_cks_prs = argparse.ArgumentParser(prog='fix_cks', description="parse the current file and update the checksums")
@@ -123,8 +149,8 @@ def apply(file):
 
 
 patch_by_file_prs = argparse.ArgumentParser(prog="patch_by_file", description="patch the current file using data from another file")
-patch_by_file_prs.add_argument('-a', '--address', help='adress of the data you want to patch')
-patch_by_file_prs.add_argument('-pf', '--patching_file', help='SRecord file containing data for patching')
+patch_by_file_prs.add_argument('-a', '--address', help='adress of the data you want to patch', required=True)
+patch_by_file_prs.add_argument('-pf', '--patching_file', help='SRecord file containing data for patching', required=True)
 def patch_by_file(file, address, patching_file):
     '''
     Patching the ADDRESS given in dest_f with values from data_f
@@ -133,15 +159,16 @@ def patch_by_file(file, address, patching_file):
                 * patching_file : (string) path to a SRecord file containing data to patch
     '''
     #Creating data string to patch destination file
+    addr_u = srf.convert_address(address)
     data = ''
     srec_data = srf.SRecordFile(patching_file)
     for line in srec_data:
         data += ''.join(line.data_h)
-    file.patch_SRecord_File(address, data)
+    file.patch_SRecord_File(addr_u, data)
 
 
 change_working_file_prs = argparse.ArgumentParser(prog="change_working_file", description="save the current file and open a new one")
-change_working_file_prs.add_argument('-f', '--file', help = 'new file to load and work on')
+change_working_file_prs.add_argument('-f', '--file', help = 'new file to load and work on', required=True)
 def change_working_file(old_file, file):
     '''
     Change the working file, after saving and closing the current one.
@@ -176,7 +203,7 @@ def strings(file, min_len):
     
 
     for byte in all_data:
-        if byte in ASCII:
+        if byte in srf.ASCII:
             detected_string += chr(byte)
         else :
             if len(detected_string) >= min_len:
@@ -185,18 +212,60 @@ def strings(file, min_len):
             else:
                 detected_string = ""
 
+add_tag_prs = argparse.ArgumentParser(prog="add_tag", description="add a tag to a memory field")
+add_tag_prs.add_argument('-n', '--name', help = 'tag name', required=True)
+add_tag_prs.add_argument('-a', '--address', help = 'address where the tagged memory area starts')
+add_tag_prs.add_argument('-l', '--length', help = 'length of the memory area, in bytes', type=int)
+def add_tag(file, name, address, length):
+    addr_u = srf.convert_address(address)
+    file.add_tag(name, addr_u, length)
+
+set_tag_prs = argparse.ArgumentParser(prog='set_tag', description='set a tagged memory area to value')
+set_tag_prs.add_argument('-n', '--name', help='tag name')
+set_tag_prs.add_argument('-v', '--value', help='hexadecimal value to which set the tagged area')
+def set_tag(file, name, value):
+    file.set_tag(name, value)
+
+add_scope_prs = argparse.ArgumentParser(prog='add_scope', description='add a scope to monitor memory area')
+add_scope_prs.add_argument('-n', '--name', help = 'tag name', required=True)
+add_scope_prs.add_argument('-a', '--address', help = 'address where the tagged memory area starts')
+add_scope_prs.add_argument('-nw', '--nb_words', help="number of words to display per line", nargs='?', default = 4, type=int)
+add_scope_prs.add_argument('-nl', '--nb_lines', help="number of lines to display", nargs='?', default=1, type=int)
+add_scope_prs.add_argument('-e', '--endianess', help="Endianess of words display", nargs='?', default='big', type=str)
+def add_scope(file, name, address, nb_words, nb_lines, endianess):
+    addr_u = srf.convert_address(address)
+    try:
+        file.add_scope(name, addr_u, nb_words, nb_lines, endianess)
+    except AccessSrecFileError as e:
+        print(e)
+
+print_scope_prs = argparse.ArgumentParser(prog='print_scope', description='binary display of the given scope')
+print_scope_prs.add_argument('-n', '--name', help = 'tag name', required=True)
+def print_scope(file, name):
+    try:
+        scope = file.get_scope(name)
+    except srf.AccessSrecFileError as e:
+        print(e)
+    else:
+        bin_disp(file, scope.start, scope.nb_words, scope.nb_line, scope.endianess)
+
 
 #Initializing our sub_func_set that will contains links between functions, their shortcuts and their parsers
 sub_func_set = SubFuncSet()
 
 #Populating our SubFuncSet
 sub_func_set.addSubFunc(FuncDef(fnc=show_line, sct='sl', prs=show_line_prs))
+sub_func_set.addSubFunc(FuncDef(fnc=bin_disp, sct='bd', prs=bin_disp_pars))
 sub_func_set.addSubFunc(FuncDef(fnc=patch, sct='p', prs=patch_prs))
 sub_func_set.addSubFunc(FuncDef(fnc=fix_cks, sct='fc', prs=fix_cks_prs))
 sub_func_set.addSubFunc(FuncDef(fnc=apply, sct='a', prs=apply_prs))
 sub_func_set.addSubFunc(FuncDef(fnc=patch_by_file, sct='pbf', prs=patch_by_file_prs))
 sub_func_set.addSubFunc(FuncDef(fnc=change_working_file, sct='cwf', prs=change_working_file_prs))
 sub_func_set.addSubFunc(FuncDef(fnc=strings, sct='s', prs=strings_prs ))
+sub_func_set.addSubFunc(FuncDef(fnc=add_tag, sct = 'adt', prs=add_tag_prs))
+sub_func_set.addSubFunc(FuncDef(fnc=set_tag, sct='st', prs=set_tag_prs))
+sub_func_set.addSubFunc(FuncDef(fnc=add_scope, sct='ads', prs=add_scope_prs))
+sub_func_set.addSubFunc(FuncDef(fnc=print_scope, sct='ps', prs=print_scope_prs))
 
 #######################################
 # Main function : entry point for SRec 
@@ -204,7 +273,7 @@ sub_func_set.addSubFunc(FuncDef(fnc=strings, sct='s', prs=strings_prs ))
 
 def main():
     #Init_pars get the argv array from the command line.
-    #It expects a file given as argument
+    #It expects a file path given as argument
     init_pars = argparse.ArgumentParser(description="Load a SRecord file to work with")
     init_pars.add_argument('-f', '--file', help='File Name')
 
@@ -254,8 +323,10 @@ def main():
             SRec_f.export(SRec_f.path)
             if cmp(SRec_f.path, SRec_f.path + '_bak'):
                 os.remove(SRec_f.path + '_bak')
+        #Here we deal with the help commands
         elif command in ["-h", "--help", "help", "h"]:
             sub_func_set.displayHelp()
+        #Finally if the command entered is not a sub_function, nore a quit or a help :
         else:
             print(f"{command} : unknown command.")
             sub_func_set.displayHelp()

@@ -4,15 +4,46 @@ import os
 
 from bisect import bisect_right
 
+ASCII = list(range(0x30, 0x39)) + list(range(0x41, 0x5a)) + list(range(0x61, 0x7a))
+
 Coord = collections.namedtuple('Coord', ['line', 'idx'])
 
 Sector = collections.namedtuple('Sector', ['start', 'end'])
+
+Tag = collections.namedtuple('Tag', ['start', 'length'])
+
+Scope = collections.namedtuple('Scope', ['start', 'nb_words', 'nb_line', 'endianess'])
 
 class SRecordFileError(Exception):
     pass
 
 class AccessSrecFileError(SRecordFileError):
     pass
+
+def convert_address(address):
+    '''
+    This function provides a mean to make sure an address can be used as an input
+    '''
+    if type(address) == int:
+        return address
+    elif type(address) == str:
+        if address.startswith('0x'):
+            try:
+                return sr.INT(address[2:])
+            except ValueError:
+                raise AccessSrecFileError("Address given cannot be resolved to an integer")
+        elif address.startswith('0X'):
+            try:
+                return sr.INT(address[2:])
+            except ValueError:
+                raise AccessSrecFileError("Address given cannot be resolved to an integer")
+        else:
+            try:
+                return sr.INT(address)
+            except ValueError:
+                raise AccessSrecFileError("Address given cannot be resolved to an integer")
+    else:
+        raise AccessSrecFileError("Address given cannot be resolved to an integer")
 
 class SRecordFile:
 
@@ -23,6 +54,8 @@ class SRecordFile:
             a list of footer SRecord
             a dictionnary of data SRecord, each SRecord having its own address for key
         '''
+        self.tags = {}
+        self.scopes = {}
         self.sectors = []
         self.start = ''
         self.path = file_name
@@ -31,11 +64,14 @@ class SRecordFile:
         self.header  = collections.OrderedDict()
         self.footer  = collections.OrderedDict()
         self.data    = {}
+        self.bytes = {}
         previous_Srec = sr.SRecord('S104000000FF')
         with open(file_name, 'r') as srec_f:
             srec_lines = srec_f.read().splitlines()
         for line in srec_lines:
             crt_srec = sr.SRecord(line)
+            for i, byte in enumerate(crt_srec.data_h):
+                self.bytes[crt_srec.address_u + i] = byte
             if crt_srec.s_type == 'S0':
                 self.header[crt_srec.address_u] = crt_srec
             elif crt_srec.s_type in ('S7', 'S8', 'S9'):
@@ -60,7 +96,9 @@ class SRecordFile:
         self.addrFormat = f"{{0:0>{self.max_addr_len}X}}"
         print(f"{self.name} successfully imported.")
         print(self.get_file_infos())
-
+    
+    def contains_address(self, address):
+        return address in self.bytes
 
     def get_file_infos(self):
         file_infos = 20*'-' + '\n'
@@ -85,6 +123,7 @@ class SRecordFile:
     def __getitem__(self, position):
         '''
         This function returns the SRec at posision if it exists
+        Position is the address, integer format
         '''
         try:
             return self.data[position]
@@ -103,33 +142,119 @@ class SRecordFile:
         Input : position is an address inside the file, integer format
         Output : a Coord named tuple, with line and idx
         '''
-        if position < self.lower_addr:
-            raise AccessSrecFileError("get_data_coord is being given an address too low")
-        elif position > self.higher_addr:
-            raise AccessSrecFileError("get_data_coord is being given an address too high")
-        else:
+        if self.contains_address(position):
             addr_line = self.addr_list[bisect_right(self.addr_list, position) - 1]
-            if position <= self.data[addr_line].end_address():
-                addr_byte = position - addr_line
-                return Coord(line=addr_line, idx=addr_byte)
-            else:
-                raise AccessSrecFileError("get_data_coord is being fiven an address in-between two sectors")
+            addr_byte = position - addr_line
+            return Coord(line=addr_line, idx=addr_byte)
+        else:
+            raise AccessSrecFileError("get_data_coord is being given an address in-between two sectors")
 
     def patch_SRecord_File(self, position, value):
         '''
-        Input : position is an address inside the file, hexadecimal format
+        Input : position is an address inside the file, integer format
                 value : the new value of the data, hexadecimal format
         Output : None, self will be updated
         '''
-        pos = sr.INT(position)
         if len(value)%2 != 0:
             raise SRecordFileError("Patching requieres full byte data, i.e. an even number of char")
-        data_coord = self.get_data_coord(pos)
+        data_coord = self.get_data_coord(position)
         patching_bytes = [value[i-2:i] for i in range(len(value), 0, -2)]
         while patching_bytes:
+            self.bytes[position] = patching_bytes[-1]
             self[data_coord.line][data_coord.idx] = patching_bytes.pop()
-            pos +=1
-            data_coord = self.get_data_coord(pos)
+            position +=1
+            data_coord = self.get_data_coord(position)
+    
+    #========================#
+    # BINARY DISPLAY SECTION #
+    #========================#
+    
+    def get_word(self, pos, endianess='big'):
+        '''
+        Given a integer address, this function returns the word stored at this address (4 bytes) as a byte list
+        '''
+        if self.contains_address(pos) and self.contains_address(pos + 4):
+            if endianess == 'big':
+                return [self.bytes[pos + x] for x in range(4)]
+            elif endianess == 'little' :
+                return [self.bytes[pos + x] for x in range(3, -1, -1)]
+            else :
+                raise AccessSrecFileError("Unknown endianess option")
+        else:
+            raise AccessSrecFileError("Given address not present in the file")
+
+    def binary_display_header(self, nr_words, endianess = 'big'):
+        header = (self.max_addr_len + 3) * ' '
+        header += (nr_words*4*3 + (nr_words - 1) * 2 - 1)*"-"
+        header += '\n'
+        header += (self.max_addr_len + 3) * ' '
+        for i in range(nr_words):
+            if endianess == 'big':
+                for j in range(4):
+                    header += "{0:0>2X} ".format(4*i + j)
+            elif endianess == 'little':
+                for j in range(3, -1, -1):
+                    header += "{0:0>2X} ".format(4*i + j)
+            else:
+                raise AccessSrecFileError("Unknown endianess option")
+            header += "  "
+        header += '\n'
+        header += (self.max_addr_len + 3) * ' '
+        header += (nr_words*4*3 + (nr_words - 1) * 2 - 1)*"-"
+        return header
+
+    def binary_display(self, pos, nr_words = 4, endianess = 'big'):
+        '''
+        Given an integer address, this function will return a line of words, binary view
+        '''
+        first_addr = self.addrFormat.format(pos)
+        words = [self.get_word(pos + 4*x, endianess) for x in range(nr_words)]
+        displ_char = ''
+        ascii_char = ''
+        for word in words:
+            for byte in word:
+                if sr.INT(byte) in ASCII:
+                    ascii_char += chr(sr.INT(byte))
+                else:
+                    ascii_char += '.'
+                displ_char += f" {byte}"
+            displ_char += "  "
+        return first_addr + ": " + displ_char + "   " + ascii_char
+    
+    def add_scope(self, name, address, nb_words = 4, nb_line = 1, endianess = 'big'):
+        if self.contains_address(address) and self.contains_address(address + 4*nb_words*nb_line):
+            self.scopes[name] = Scope(start=address, nb_words=nb_words, nb_line=nb_line, endianess=endianess)
+        else:
+            raise AccessSrecFileError("Given address field not present in the file")
+    
+    def get_scope(self, name):
+        if name in self.scopes :
+            return self.scopes[name]
+        else:
+            raise AccessSrecFileError("Given name is not in scope list")
+
+    #===================#
+    # Dealing with tags #
+    #===================#
+
+    def add_tag(self, name, address, length):
+        if self.contains_address(address) and self.contains_address(address + length):
+            self.tags[name] = Tag(start=address, length=length)
+        else:
+            raise AccessSrecFileError("Given address field not present in the file")
+    
+
+    def set_tag(self, name, value):
+        if name in self.tags:
+            if len(value)/2 <= self.tags[name].length:
+                address  = self.tags[name].start
+                value = f"{{0:0>{self.tags[name].length*2}X}}".format(sr.INT(value))
+                self.patch_SRecord_File(address, value)
+            else:
+                raise SRecordFileError("Data given do not fit the tag size")
+        else:
+            raise AccessSrecFileError("Given address field not present in the file")
+    
 
     def export(self, name):
         '''
@@ -142,4 +267,3 @@ class SRecordFile:
                 SRec_f.write(self.data[addr].to_string(end='\n'))
             for addr in self.footer:
                 SRec_f.write(self.footer[addr].to_string(end='\n'))
-
