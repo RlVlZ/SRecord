@@ -1,0 +1,11 @@
+# TO DO LIST
+---
+- [ ] being able to save tags and scopes for a given file (pickle module)
+- [ ] being able to load tags and scopes (auto with a hash system or manually)
+- [ ] suppress deep_copy (too slow and not needed)
+- [ ] deploy command pattern in order to get undo/redo actions
+- [ ] use command pattern to deal with backup files
+- [ ] being able to load a few files in the same time and navigate from one to another
+- [ ] regarding previous point : being able to copy datas from one to another
+- [ ] improve the command line, eventually with autocomplete (Cf cmd module and/or prompt_toolkit)
+- [ ] create a "remap_sector" function
